@@ -70,6 +70,9 @@ For efficiency, captured packets can be truncated to a given length during the
 capture process, which reduces capture overhead and pcap file sizes.
 (If used with "-d", specifies length after decapsulation.)
 .TP
+\fB\-F\fR
+Skip default check that the capture interface is an Ethernet interface.
+.TP
 \fB\-x\fR
 Use file locking to request (via exclusive lock) that this be the only
 instance of \fBGulp\fR running.  If other instances are already running,
@@ -123,6 +126,14 @@ Pcap files will be named \fBpcap\fI###\fR (where \fI###\fP starts at 000
 and counts up).  To prevent mischief, the directory must exist (and be
 writable by the user running Gulp if Gulp is running setuid).
 .TP
+\fB\-n \fIname\fR
+Specify a filename prefix of \fIname\fP instead of the default \fBpcap\fP.
+.TP
+\fB\-t\fR
+When set, the current timestamp will be appended after \fIname\fP. This
+option implicitely sets \fB\-z 1000\fP (and so always produces filenames
+like \fIname\fP1234567890.\fI###\fP).
+.TP
 \fB\-C \fI#\fR
 When using the -o option above, start a new pcap file when the old one
 reaches about # times the size of the ring buffer.  The default value is
@@ -131,10 +142,18 @@ grow to about 1000MB before a new one is started.  Since some programs
 read an entire pcap file into memory when using it, splitting the output
 into chunks can be helpful.
 .TP
+\fB\-G \fI#\fR
+If set, specifies the maximum delay (in seconds) after which a new output
+file is created (same behavior as the equivalent \fBtcpdump\fP option).
+.TP
 \fB\-W \fI#\fR
 Specifies a maximum number of pcap files to create before overwriting
 them.  The default is to never overwrite them.  This option allows capturing
 indefinitely (waiting for a problem to occur) with finite disk space.
+.TP
+\fB\-Z \fIpostrotate-command\fR
+If set, specifies a command to post-process each capture file after they got
+rotated.
 .SH OTHER OPTIONS
 .TP
 \fB\-B\fR
@@ -224,10 +243,10 @@ This makes Gulp look bad but is probably not a problem in practice.
 .SH AUTHOR
 Written by Corey Satten, corey \@ u.washington.edu
 .LP
-See \fBhttp://staff.washington.edu/corey/gulp/\fP for more information and
+See \fBhttp://corey.elsewhere.org/gulp/\fP for more information and
 the latest version.
 .LP
-This manpage corresponds to Gulp version 1.58.
+This manpage corresponds to Gulp version 1.58-crox.
 .SH COPYRIGHT
 Copyright \(co 2007 University of Washington
 .SH LICENSE

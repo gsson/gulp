@@ -88,6 +88,7 @@
 #include <sys/resource.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <sys/wait.h>
 
 #define gettid() syscall(__NR_gettid)	/* missing in headers? */
 #define RINGSIZE 1024*1024*100	/* about 5 seconds of data at 200Mb/s */
@@ -134,7 +135,8 @@ int  warn_buf_full = 1;		/* unless reading a file, warn if buf fills */
 pcap_t *handle = 0;		/* packet capture handle */
 struct pcap_stat pcs;		/* packet capture filter stats */
 int got_stats = 0;		/* capture stats have been obtained */
-char *id = "@(#) Gulp RCS $Revision: 1.58 $"; /* automatically maintained */
+char *id = "@(#) Gulp RCS $Revision: 1.58-crox $"; /* automatically maintained */
+int  check_eth = 1;		/* check that we are capturing from an Ethernet device */
 int  would_block = 0;		/* for academic interest only */
 int  check_block = 0;		/* use select to see if writes would block */
 int  yield_if_blocking = 0;	/* experimental: may help on uniprocessors */
@@ -143,11 +145,21 @@ int  ps_stat_len = 0;		/* initial length of -V arg */
 int  xlock = 0;			/* set if exclusive lock requested */
 int  lockfd;			/* open descriptor to file to lock */
 char *odir = 0;			/* requested output directory name */
+char wfile[PATH_MAX];		/* output filename */
+char *oname = "pcap";		/* requested output file name */
+int  tflag = 0;			/* append timestamp to the file name */
 int  filec = 0;			/* output file number */
 struct pcap_file_header fh;	/* begins every pcap file */
 int  split_after = 10;		/* start new output file after # ringbufs */
+int  split_seconds = 0;		/* start new output file after # seconds */
+time_t bdry_time = 0;           /* packet capture output file open time */
+int  time_split = 0;		/* 1 when time() - bdry_time > split_seconds */
 int  max_files = 0;		/* upper bound on filec */
 int  volatile reader_ready = 0;	/* reader thread no longer needs root */
+char *zcmd = NULL;              /* processes each savefile using a specified command */
+int  zflag = 0;
+static void child_cleanup(int); /* to avoid zombies, see below */
+
 
 /*
  * put data onto the end of global ring buffer "buf"
@@ -175,6 +187,9 @@ append(char *ptr, int len, int bdry)
 	if (eof) return;
 	}
     if (len > 0 && len < avail) {	/* ring buffer space available */
+        if (bdry && (split_seconds != 0) && ((time(NULL) - bdry_time) >= split_seconds)) {
+	    time_split = 1;
+	    }
 	if (end + len <= ringsize) {	  /* no wrap to beginning needed */
 	    memcpy(buf+end, ptr, len);
 	    }
@@ -190,9 +205,12 @@ append(char *ptr, int len, int bdry)
 	else {
 	    end += len;
 	    }
-	if (just_wrapped && bdry) {
+	if (time_split || (just_wrapped && bdry)) {
+	    if (just_wrapped) {
+		wrap_cnt++;
 	    just_wrapped = 0;
-	    if (odir && ++wrap_cnt >= split_after) {
+		}
+	    if (odir && (wrap_cnt >= split_after || time_split)) {
 		while (boundary >= 0) {	  /* last split still pending */
 		    if (warned<push) {
 			warned = push;
@@ -208,6 +226,8 @@ append(char *ptr, int len, int bdry)
 		 */
 		boundary = end;
 		wrap_cnt = 0;
+		bdry_time = time(NULL);
+		time_split = 0;
 		if (!just_copy) append((char *)&fh, sizeof(fh), 0);
 		}
 	    }
@@ -358,7 +378,7 @@ void *Reader(void *arg)
     reader_ready = 1;
 
     /* make sure we're capturing on an Ethernet device */
-    if (pcap_datalink(handle) != DLT_EN10MB) {
+    if (check_eth == 1 && pcap_datalink(handle) != DLT_EN10MB) {
 	fprintf(stderr, "%s: %s is not an Ethernet\n", progname, dev);
 	exit(EXIT_FAILURE);
     }
@@ -457,6 +477,34 @@ void *Reader(void *arg)
     }
 
 /*
+ * Post-process capture files after they have been rotated
+ * (copied from tcpdump)
+ */
+static void
+child_cleanup(int signo)
+{
+  wait(NULL);
+}
+
+void process_savefile(char filename[PATH_MAX])
+    {
+    if (fork())
+	return;
+    /* set to lowest priority */
+#ifdef NZERO
+    setpriority(PRIO_PROCESS, 0, NZERO - 1);
+#else
+    setpriority(PRIO_PROCESS, 0, 19);
+#endif
+    if (zflag) {
+        if (execlp(zcmd, zcmd, filename, (char *)NULL) == -1) {
+	    fprintf(stderr, "compress_savefile: execlp(%s, %s): %s\n", zcmd,
+		filename, strerror(errno));
+	    }
+	}
+    }
+
+/*
  * Redirect standard output into a new capture file in the specified directory.
  *
  * In case Gulp is running setuid root, try to prevent a user from
@@ -479,7 +527,12 @@ newoutfile(char *dir, int num) {
 	return (0);
 	}
     snprintf(tfile, sizeof(tfile), "%s%s", dir, TEMPLATE);
-    snprintf(ofile, sizeof(ofile), "%s/pcap%03d", dir, num);
+    if (tflag) {
+    	snprintf(ofile, sizeof(ofile), "%s/%s%lld.%03d", dir, oname, (long long int)time(NULL), num);
+	}
+    else {
+    	snprintf(ofile, sizeof(ofile), "%s/%s%03d", dir, oname, num);
+	}
     int tmpfd = mkstemp(tfile);
     fchown(tmpfd, getuid(), -1);	/* in case running setuid */
     if (tmpfd >= 0) {
@@ -491,6 +544,11 @@ newoutfile(char *dir, int num) {
 	dup2(tmpfd, fileno(stdout));	/* try to use the initial fd */
 	close(tmpfd);
 	rename(tfile, ofile);
+	if (odir) {
+	    process_savefile(wfile);
+	    }
+	/* wfile = ofile; */
+	snprintf(wfile, sizeof(wfile), "%s", ofile);
 	return (1);
 	}
     else {
@@ -531,6 +589,13 @@ void *Writer(void *arg)
     if (geteuid()!=getuid()) {
 	while (!reader_ready) usleep(poll_usecs);
 	seteuid(getuid());		/* drop setuid privilege */
+	}
+
+    if (tflag) {
+	if (max_files && max_files != 1000) {
+	    fprintf(stderr, "%s: -W will be set to 1000 because -t is also set\n", progname); 
+	    }
+	max_files = 1000;
 	}
 
     if (odir && !newoutfile(odir, filec++)) {
@@ -601,6 +666,9 @@ void *Writer(void *arg)
 	    }
 	pushed = push;
 	}
+    if (odir) {
+	process_savefile(wfile);
+	}
     pthread_exit(NULL);
     }
 
@@ -618,6 +686,7 @@ usage() {
     "      -f \"...\"\tspecify a pcap filter - see manpage and -d\n"
     "      -i eth#|-\tspecify ethernet capture interface or '-' for stdin\n"
     "      -s #\tspecify packet capture \"snapshot\" length limit\n"
+    "      -F\tskip the interface type (Ethernet) check\n"
 #endif /* JUSTCOPY */
     "      -r #\tspecify ring buffer size in megabytes (1-1024)\n"
     "      -c\tjust buffer stdin to stdout (works with arbitrary data)\n"
@@ -630,8 +699,12 @@ usage() {
     "      -z #\tspecify write blocksize (even power of 2, default 65536)\n"
     "    for long-term capture\n"
     "      -o dir\tredirect pcap output to a collection of files in dir\n"
+    "      -n name\tfilename (default: pcap)\n"
+    "      -t\tappend a timestamp to the filename\n"
     "      -C #\tlimit each pcap file in -o dir to # times the (-r #) size\n"
-    "      -W #\toverwrite pcap files in -o dir rather than start #+1\n"
+    "      -G #\trotates the pcap file every # seconds\n"
+    "      -W #\toverwrite pcap files in -o dir rather than start #+1 (max_files)\n"
+    "      -Z postrotate-command\trun 'command file' after each rotation\n"
     "    and some of academic interest only:\n"
     "      -B\tcheck if select(2) would ever have blocked on write\n"
     "      -Y\tavoid writes which would block\n"
@@ -662,15 +735,18 @@ int main(int argc, char *argv[], char *envp[])
 
     if (argc > 1 && strcmp(argv[1], "--help") == 0) ++errflag; else
 #ifndef JUSTCOPY
-    while ((c = getopt(argc, argv, "BXYcdqvxf:i:p:r:s:z:V:o:C:W:")) != EOF)
+    while ((c = getopt(argc, argv, "BFXYcdqtvxf:i:p:r:s:z:V:o:n:C:G:W:Z:")) != EOF)
 #else  /* JUSTCOPY */
-    while ((c = getopt(argc, argv, "BXYcqvxp:r:z:V:o:C:W:")) != EOF)
+    while ((c = getopt(argc, argv, "BXYcqtvxp:r:z:V:o:n:C:G:W:Z:")) != EOF)
 #endif /* JUSTCOPY */
 	{
 	switch (c) {
 	    case 'B':
 		check_block = 1;	/* use select to avoid write blocking */
 		break;
+	    case 'F':
+		check_eth = 0;	        /* don't check that we are capturing from an */
+		break;                  /* Ethernet device */
 	    case 'Y':
 		check_block = 1;
 		yield_if_blocking = 1;	/* don't issue blocking writes */
@@ -744,6 +820,12 @@ int main(int argc, char *argv[], char *envp[])
 		    errflag++;
 		    }
 		break;
+	    case 't':
+		tflag = 1;
+		break;
+	    case 'n':
+		oname = optarg;
+		break;
 	    case 'o':
 		odir = optarg;
 		if (strlen(odir) >= PATH_MAX-strlen(TEMPLATE)-1) {
@@ -760,6 +842,14 @@ int main(int argc, char *argv[], char *envp[])
 		    errflag++;
 		    }
 		break;
+	    case 'G':
+		split_seconds = atoi(optarg);
+		if (split_seconds < 1) {
+		    fprintf(stderr, "%s: -G # must be 1 or greater\n",
+			progname);
+		    errflag++;
+		    }
+		break;
 	    case 'W':
 		max_files = atoi(optarg);
 		if (max_files < 1) {
@@ -767,6 +857,10 @@ int main(int argc, char *argv[], char *envp[])
 			progname);
 		    errflag++;
 		    }
+		break;
+	    case 'Z':
+		zcmd = optarg;
+                zflag = 1;
 		break;
 	    default:
 		errflag++;
@@ -777,6 +871,9 @@ int main(int argc, char *argv[], char *envp[])
 	usage();
 	exit(1);
 	}
+
+    /* to avoid zombies when using -Z */
+    (void)sigset(SIGCHLD, child_cleanup);
 
     /*
      * if -d is spcified, -s refers to decapsulated sizes, make it happen

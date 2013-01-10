@@ -52,8 +52,8 @@ GULP(1)                          User Commands                         GULP(1)
               decapsulate offline this way).
 
        <B><FONT COLOR=#0000ff>-r</B></FONT> <B><FONT COLOR=#ff0000>#</B></FONT>   Specify  a  ring buffer size (in megabytes).  Values from 1-1024
-              are permitted, the default is  100MB.   If  possible,  the  ring
-              buffer will be locked into RAM.
+              are permitted, the default is 100MB.  If possible, the ring buf-
+              fer will be locked into RAM.
 
        <B><FONT COLOR=#0000ff>-c</B></FONT>     Just  copy  and  buffer bytes from stdin to stdout -- don't read
               packets from the network and don't  assume  anything  about  the
@@ -65,6 +65,9 @@ GULP(1)                          User Commands                         GULP(1)
               to a given length during the capture process, which reduces cap-
               ture  overhead  and pcap file sizes.  (If used with "-d", speci-
               fies length after decapsulation.)
+
+       <B><FONT COLOR=#0000ff>-F</B></FONT>     Skip  default  check  that  the capture interface is an Ethernet
+              interface.
 
        <B><FONT COLOR=#0000ff>-x</B></FONT>     Use file locking to request (via exclusive lock)  that  this  be
               the  only  instance  of  <B><FONT COLOR=#0000ff>Gulp</B></FONT>  running.   If other instances are
@@ -118,6 +121,13 @@ GULP(1)                          User Commands                         GULP(1)
               (and  be  writable  by  the user running Gulp if Gulp is running
               setuid).
 
+       <B><FONT COLOR=#0000ff>-n</B></FONT> <B><FONT COLOR=#ff0000>name</B></FONT>
+              Specify a filename prefix of <B><FONT COLOR=#ff0000>name</B></FONT> instead of the default <B><FONT COLOR=#0000ff>pcap</B></FONT>.
+
+       <B><FONT COLOR=#0000ff>-t</B></FONT>     When set, the current timestamp will  be  appended  after  <B><FONT COLOR=#ff0000>name</B></FONT>.
+              This  option  implicitely  sets  <B><FONT COLOR=#0000ff>-z</B></FONT> <B><FONT COLOR=#0000ff>1000</B></FONT> (and so always produces
+              filenames like <B><FONT COLOR=#ff0000>name</B></FONT>1234567890.<B><FONT COLOR=#ff0000>###</B></FONT>).
+
        <B><FONT COLOR=#0000ff>-C</B></FONT> <B><FONT COLOR=#ff0000>#</B></FONT>   When using the -o option above, start a new pcap file  when  the
               old  one reaches about # times the size of the ring buffer.  The
               default value is 10 and the default ring buffer size is 100MB so
@@ -126,10 +136,18 @@ GULP(1)                          User Commands                         GULP(1)
               into  memory when using it, splitting the output into chunks can
               be helpful.
 
+       <B><FONT COLOR=#0000ff>-G</B></FONT> <B><FONT COLOR=#ff0000>#</B></FONT>   If set, specifies the maximum delay (in seconds) after  which  a
+              new output file is created (same behavior as the equivalent <B><FONT COLOR=#0000ff>tcp-</B></FONT>
+              <B><FONT COLOR=#0000ff>dump</B></FONT> option).
+
        <B><FONT COLOR=#0000ff>-W</B></FONT> <B><FONT COLOR=#ff0000>#</B></FONT>   Specifies a maximum number of pcap files to create before  over-
               writing  them.   The  default  is to never overwrite them.  This
               option allows capturing indefinitely (waiting for a  problem  to
               occur) with finite disk space.
+
+       <B><FONT COLOR=#0000ff>-Z</B></FONT> <B><FONT COLOR=#ff0000>postrotate-command</B></FONT>
+              If  set,  specifies  a command to post-process each capture file
+              after they got rotated.
 
 <B><FONT COLOR=#0000ff>OTHER</B></FONT> <B><FONT COLOR=#0000ff>OPTIONS</B></FONT>
        <B><FONT COLOR=#0000ff>-B</B></FONT>     This  option  is  of academic interest only.  It enables code to
@@ -207,10 +225,10 @@ GULP(1)                          User Commands                         GULP(1)
 <B><FONT COLOR=#0000ff>AUTHOR</B></FONT>
        Written by Corey Satten, corey @ u.washington.edu
 
-       See  <B><FONT COLOR=#0000ff>http://staff.washington.edu/corey/gulp/</B></FONT>  for  more information and
-       the latest version.
+       See <B><FONT COLOR=#0000ff>http://corey.elsewhere.org/gulp/</B></FONT> for more information and the  lat-
+       est version.
 
-       This manpage corresponds to Gulp version 1.58.
+       This manpage corresponds to Gulp version 1.58-crox.
 
 <B><FONT COLOR=#0000ff>COPYRIGHT</B></FONT>
        Copyright (C) 2007 University of Washington
