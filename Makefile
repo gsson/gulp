@@ -1,13 +1,10 @@
 CFLAGS = -O
 #CFLAGS = -O -DRHEL3
 #CFLAGS = -O -DJUSTCOPY
-#CFLAGS = -O -DPCAP32_KLUDGE
-#CFLAGS = -O -m32
 
-FILES=license.txt NOTICE gulp.c gulp.1 gulpman.html gulpman.pdf Makefile conv.c gulp.html check64bit.c changelog
+FILES=license.txt NOTICE gulp.c gulp.1 gulpman.html gulpman.pdf Makefile conv.c gulp.html changelog
 
-gulp:	gulp.c check64bit
-	./check64bit; rm -f check64bit
+gulp:	gulp.c 
 	cc -g $(CFLAGS) gulp.c -o gulp -lpthread -lpcap
 
 gulpman.html:	gulp.1
